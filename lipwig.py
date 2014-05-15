@@ -6,8 +6,8 @@ from cgi import escape
 
 def ifseteq(h, k, v):
 	return h.has_key(k) and h[k] == v
-def lwrap(t):
-	return "<br/>".join(textwrap.wrap(t, 32))
+def lwrap(t, n=32):
+	return "\n".join(textwrap.wrap(t, n))
 
 class TezVertex(object):
 	def __init__(self, dag, name, raw):
@@ -47,6 +47,8 @@ class TezVertex(object):
 			"keys:",
 			"Map-reduce partition columns:"
 		])
+		if type(ops) is not dict:
+			return
 		for (k,v) in ops.items():
 			nodeid = self.nodes
 			name = "%s_%d" % (self.prefix, nodeid)
@@ -60,9 +62,12 @@ class TezVertex(object):
 					self.drawOp(v1, name)
 				elif k1 == "Statistics:":
 					rows = v1[v1.find("Num rows:")+len("Num rows:"):v1.find("Data size:")]
+					rawsize = v1[v1.find("Data size:")+len("Data size:") : v1.find("Basic ")]
 					text.insert(1,"<tr><td>Rows:</td><td>%s</td></tr>" % rows)
+					text.insert(1,"<tr><td>Size:</td><td>%s</td></tr>" % rawsize)
 				else:
-					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), lwrap(escape(json.dumps(v1)))))
+					l = escape(lwrap(json.dumps(v1))).replace("\n", "<br/>")
+					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
 			#print '%s [label="%s"];' % (name, k)
 			if v.items():
 				print '%s [shape=plaintext,label=<%s>];' % (name, "<table>%s</table>" % "\n".join(text)) 
