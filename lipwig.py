@@ -11,15 +11,18 @@ def lwrap(t, n=32):
 
 class TezVertex(object):
 	def __init__(self, dag, name, raw):
+		self.dag = dag
 		self.name = name
 		self.raw = raw
 		self.vectorized = False
+		self.empty = True
 		self.parents = []
 		self.prefix = name.replace(" ", "_")
 		for k in raw:
 			if k == "Execution mode:":
 				self.vectorized = raw[k] == "vectorized"
 			elif k.find("Operator Tree"):
+				self.empty = False
 				self.tree = raw[k]
 				# annoying details Map operator uses a list
 				# (tez won't do tagged joins)
@@ -59,7 +62,11 @@ class TezVertex(object):
 			text = ["<tr><td colspan=\"2\"><b>%s</b></td></tr>" % k]
 			for k1,v1 in v.items():
 				if (k1 == "children" and v1): 
-					self.drawOp(v1, name)
+					if type(v1) is list:
+						for v2 in v1:
+							self.drawOp(v2, name)
+					else:
+						self.drawOp(v1, name)
 				elif k1 == "Statistics:":
 					rows = v1[v1.find("Num rows:")+len("Num rows:"):v1.find("Data size:")]
 					rawsize = v1[v1.find("Data size:")+len("Data size:") : v1.find("Basic ")]
@@ -78,7 +85,10 @@ class TezVertex(object):
 	def connect(self):
 		for (i, t, p) in self.parents:
 			pprefix = p.name.replace(" ", "_")
-			print '%s_%d -> %s_0 [label="%s", weight=100];' % (pprefix, p.nodes-1, self.prefix, t)
+			if t == "CONTAINS":
+				print '%s_%d -> %s_0 [label="%s", weight=100];' % (self.prefix, self.nodes-1, pprefix, t)
+			else:
+				print '%s_%d -> %s_0 [label="%s", weight=100];' % (pprefix, p.nodes-1, self.prefix, t)
 
 
 class HiveTezDag(object):
@@ -86,7 +96,7 @@ class HiveTezDag(object):
 		raw = raw["Tez"]
 		self.query = q
 		self.name = raw["DagName:"]
-		self.edges = raw["Edges:"]
+		self.edges = (raw.has_key("Edges:") and raw["Edges:"]) or {}
 		self.vertices = [TezVertex(self, k,v) for (k,v) in raw["Vertices:"].items()]
 		vmap = dict([(v.name, v) for v in self.vertices])
 		for k,v in self.edges.items():
@@ -101,15 +111,15 @@ class HiveTezDag(object):
 class HivePlan(object):
 	def __init__(self, q, raw):
 		self.raw = raw
-		plans = [(k,HiveTezDag(q, v)) for (k,v) in raw["STAGE PLANS"].items() if v.has_key("Tez")]
-		assert len(plans) == 1
-		self.plan = plans.pop()
+		stages = [(k,HiveTezDag(q, v)) for (k,v) in raw["STAGE PLANS"].items() if v.has_key("Tez")]
+		assert len(stages) == 1
+		self.stages = stages.pop()
 	def draw(self):
 		print "digraph g {"
 		print "node [shape=box];"
 		print 'node [id="\N"];'
 		print ""
-		self.plan[1].draw()
+		self.stages[1].draw()
 		print "}"
 
 def main(argv):
