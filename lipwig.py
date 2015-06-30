@@ -1,8 +1,15 @@
 import sys
 import json
 import textwrap
+from getopt import getopt
 
 from cgi import escape
+
+
+SIMPLE=True
+def simple():
+	global SIMPLE
+	return SIMPLE
 
 def ifseteq(h, k, v):
 	return h.has_key(k) and h[k] == v
@@ -72,7 +79,7 @@ class TezVertex(object):
 					rawsize = v1[v1.find("Data size:")+len("Data size:") : v1.find("Basic ")]
 					text.insert(1,"<tr><td>Rows:</td><td>%s</td></tr>" % rows)
 					text.insert(1,"<tr><td>Size:</td><td>%s</td></tr>" % rawsize)
-				else:
+				elif k1 == "alias:" or not simple():
 					l = escape(lwrap(json.dumps(v1))).replace("\n", "<br/>")
 					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
 			#print '%s [label="%s"];' % (name, k)
@@ -123,6 +130,11 @@ class HivePlan(object):
 		print "}"
 
 def main(argv):
+	opts, argv = getopt(argv, "0", ['simple'])
+	global SIMPLE
+	for (k,v) in opts:
+		if k == '0':
+			SIMPLE=True
 	p = [HivePlan(f, json.load(open(f))) for f in argv]
 	[x.draw() for x in p]
 
