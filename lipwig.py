@@ -6,7 +6,8 @@ from getopt import getopt
 from cgi import escape
 
 
-SIMPLE=True
+SIMPLE=False
+
 def simple():
 	global SIMPLE
 	return SIMPLE
