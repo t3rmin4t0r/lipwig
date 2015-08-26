@@ -134,7 +134,7 @@ def main(argv):
 	opts, argv = getopt(argv, "0", ['simple'])
 	global SIMPLE
 	for (k,v) in opts:
-		if k == '0':
+		if k == '-0' or k == "--simple":
 			SIMPLE=True
 	p = [HivePlan(f, json.load(open(f))) for f in argv]
 	[x.draw() for x in p]
