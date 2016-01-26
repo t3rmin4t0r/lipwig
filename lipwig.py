@@ -103,7 +103,7 @@ class HiveTezDag(object):
 	def __init__(self, q, raw):
 		raw = raw["Tez"]
 		self.query = q
-		self.name = raw["DagName:"]
+		self.name = raw.get("DagName:") or raw.get("DagId:") or "Unknown"
 		self.edges = (raw.has_key("Edges:") and raw["Edges:"]) or {}
 		self.vertices = [TezVertex(self, k,v) for (k,v) in raw["Vertices:"].items()]
 		vmap = dict([(v.name, v) for v in self.vertices])
