@@ -39,11 +39,13 @@ class TezVertex(object):
 					self.tree = self.tree.pop()
 	def draw(self):
 		self.nodes = 0
+		color = "blue" if self.vectorized else "red"
 		print "subgraph cluster_%s {" % self.prefix 
 		print 'style=dashed ;' 
 		print "compound=true;"
 		print "rank=same;"
-		print 'label="%s";' % self.name
+		print "color=%s;" % color
+		print 'label="%s (vectorized=%s)";' % (self.name, str(self.vectorized).lower())
 		self.drawOp(self.tree, None)
 		print "}"
 
