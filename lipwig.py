@@ -28,7 +28,7 @@ class TezVertex(object):
 		self.prefix = name.replace(" ", "_")
 		for k in raw:
 			if k == "Execution mode:":
-				self.vectorized = raw[k] == "vectorized"
+				self.vectorized = "vectorized" in raw[k]
 			elif k.find("Operator Tree"):
 				self.empty = False
 				self.tree = raw[k]
