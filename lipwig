@@ -5,7 +5,7 @@ type python >/dev/null 2>&1 || { echo >&2 "Cannot find python.. Aborting."; exit
 type dot >/dev/null 2>&1 || { echo >&2 "Cannot find dot (graphviz).. Aborting."; exit 1; }
 
 TYPE=svg
-
+LIPWIG_HOME="."
 while [[ $# -gt 0 ]]
 do
 key="$1"
@@ -50,7 +50,7 @@ if [ -z "$OUTPUT" ]; then
 	OUTPUT="$INPUT.$TYPE"
 fi
 
-python lipwig.py $SIMPLE $INPUT | dot -T$TYPE -o $OUTPUT
+python $LIPWIG_HOME/lipwig.py $SIMPLE $INPUT | dot -T$TYPE -o $OUTPUT
 
 if [ $? -eq 0 ]; then
 	echo "Output saved to $OUTPUT"
