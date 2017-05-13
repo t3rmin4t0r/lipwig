@@ -1,0 +1,59 @@
+#!/bin/bash
+set -e
+
+type python >/dev/null 2>&1 || { echo >&2 "Cannot find python.. Aborting."; exit 1; }
+type dot >/dev/null 2>&1 || { echo >&2 "Cannot find dot (graphviz).. Aborting."; exit 1; }
+
+TYPE=svg
+LIPWIG_HOME=${LIPWIG_HOME:-'.'}
+while [[ $# -gt 0 ]]
+do
+key="$1"
+case $key in
+    -s|--simple)
+    SIMPLE="--simple"
+    ;;
+    -i|--input)
+    INPUT="$2"
+    shift # past argument
+    ;;
+    -o|--output)
+    OUTPUT="$2"
+    shift # past argument
+    ;;
+    -t|--type)
+    TYPE="$2"
+    shift # past argument
+    ;;
+    --default)
+    DEFAULT=YES
+    ;;
+    *)
+    # unknown option
+    ;;
+esac
+shift # past argument or value
+done
+
+if [ -z "$INPUT" ]; then
+	echo "Missing input file.";
+	echo "lipwig <options> -i explain.json"
+	echo "Options:"
+	echo "	-s|--simple	simple output"
+	echo "	-i|--input	input json file containing apache hive explain plan"
+	echo "	-o|--output	output file"
+	echo "	-t|--type	filetype of output. All types supported by graphviz/dot command"
+	exit 1;
+fi
+
+if [ -z "$OUTPUT" ]; then
+	OUTPUT="$INPUT.$TYPE"
+fi
+
+python $LIPWIG_HOME/lipwig.py $SIMPLE $INPUT | dot -T$TYPE -o $OUTPUT
+
+if [ $? -eq 0 ]; then
+	echo "Output saved to $OUTPUT"
+else
+	echo "Unable to generate $TYPE output"
+fi
