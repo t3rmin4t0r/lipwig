@@ -84,6 +84,8 @@ class TezVertex(object):
 					text.insert(1,"<tr><td>Size:</td><td>%s</td></tr>" % rawsize)
 				elif k1 == "alias:" or not simple():
 					l = escape(lwrap(json.dumps(v1))).replace("\n", "<br/>")
+					if k1 == "predicate:" and l.strip() == '"false (type: boolean)"':
+						l='<FONT COLOR="RED" POINT-SIZE="24">&#9888;%s</FONT>' % l
 					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
 			#print '%s [label="%s"];' % (name, k)
 			if v.items():
