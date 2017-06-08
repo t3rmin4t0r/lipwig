@@ -33,14 +33,19 @@ class TezEdge(object):
 		self.dstV = None
 		self.srcOp = None
 		self.dstOp = None
+		self.port = "n"
 	def connect(self):
+		def drawEdge(a,b):
+			print '%s:s -> %s:%s [label="%s", weight=100];' % (a,b,self.port, self.kind)
 		if self.srcOp and self.dstOp:
-			print '%s -> %s [label="%s", weight=100];' % (self.srcOp['OperatorId:'], self.dstOp['OperatorId:'], self.kind)
+			drawEdge(self.srcOp['OperatorId:'], self.dstOp['OperatorId:'])
 		elif self.dstOp:
-			print '%s -> %s [label="%s", weight=100];' % (self.srcV.bottom, self.dstOp['OperatorId:'], self.kind)
+			drawEdge(self.srcV.bottom, self.dstOp['OperatorId:'])
+		elif self.srcOp:
+			drawEdge(self.srcOp['OperatorId:'], self.dstV.top)
 		else:
-			print '%s -> %s [label="%s", weight=100];' % (self.srcV.bottom, self.dstV.top, self.kind)
-	def claim(self, vmap):
+			drawEdge(self.srcV.bottom, self.dstV.top)
+	def claim(self, vmap, opmap):
 		self.srcV = vmap[self.src]
 		self.dstV = vmap[self.dst]
 		srcops = vmap[self.src].opset
@@ -52,13 +57,33 @@ class TezEdge(object):
 				if dstops.has_key(outop):
 					self.srcOp = op
 					self.dstOp = dstops[outop]
-					return
+					if (self.dstOp.has_key('input vertices:')):
+						inputs = set(self.dstOp['input vertices:'].values())
+						if (self.src in inputs):
+							self.port = 'e'
+						# do not trust it
+						# return
 		for op in dstops.values():
 			if (op.has_key('input vertices:')):
 				inputs = set(op['input vertices:'].values())
+				if op != self.dstOp and self.dstOp:
+					comment("broken explain for " + self.srcOp['OperatorId:'] + " -> " + self.dstOp['OperatorId:']);
 				if (self.src in inputs):
 					self.dstOp = op
+					self.port = 'e'
 					return
+		if self.kind == "CONTAINS":
+			for op in srcops.values():
+				if (op.has_key('outputOperator:')):
+					# one level deeper
+					outop = op['outputOperator:'][0]
+					if opmap.has_key(outop):
+						finalop = opmap[outop]
+						if finalop.has_key("input vertices:"):
+							inputs = set(finalop['input vertices:'].values())
+							if self.dst in inputs:
+								self.srcOp = op
+								return
 		comment("WARNING: No connection for %s->%s" % (self.src, self.dst))
 	@staticmethod
 	def create(dst, srcs):
@@ -170,6 +195,8 @@ class TezVertex(object):
 					text.insert(1,"<tr><td>Size:</td><td>%s</td></tr>" % rawsize)
 				elif k1 == "alias:" or not simple():
 					l = escape(lwrap(json.dumps(v1))).replace("\n", "<br/>")
+					comment(l)
+					l = l.replace("&lt;s&gt;","<s>").replace("&lt;/s&gt;","</s>");
 					if k1 == "predicate:" and l.strip() == '"false (type: boolean)"':
 						l='<FONT COLOR="RED" POINT-SIZE="24">&#9888;%s</FONT>' % l
 					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
@@ -190,8 +217,9 @@ class HiveTezDag(object):
 		opmap = reduce(lambda a,b: a.update(b) or a, [v.opset for v in self.vertices], {})
 		comment(opmap.keys())
 		# basic assumption 1-1 edge between vertices
-		for e in self.edges:
-			e.claim(vmap)
+		# but connect unions first
+		for e in sorted(self.edges, key = lambda e : (e.kind == "CONTAINS" and 0) or 1):
+			e.claim(vmap, opmap)
 	def draw(self):
 		[v.draw() for v in self.vertices]
 		[e.connect() for e in self.edges]
@@ -207,6 +235,7 @@ class HivePlan(object):
 		print "node [shape=box];"
 		print 'node [id="\N"];'
 		print 'compound=true;'
+		#print 'splines=ortho;'
 		print ""
 		self.stages[1].draw()
 		print "}"
