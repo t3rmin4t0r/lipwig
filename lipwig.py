@@ -4,18 +4,73 @@ import textwrap
 from getopt import getopt
 
 from cgi import escape
+from itertools import count as counter
 
 
 SIMPLE=False
+
+
+def comment(s):
+	print "/*\n%s\n*/" % s
 
 def simple():
 	global SIMPLE
 	return SIMPLE
 
+nextInt = counter().next 
+
 def ifseteq(h, k, v):
 	return h.has_key(k) and h[k] == v
 def lwrap(t, n=32):
 	return "\n".join(textwrap.wrap(t, n))
+
+class TezEdge(object):
+	def __init__(self, src, dst, kind):
+		self.src = src
+		self.dst = dst
+		self.kind = kind
+		self.srcV = None
+		self.dstV = None
+		self.srcOp = None
+		self.dstOp = None
+	def connect(self):
+		if self.srcOp and self.dstOp:
+			print '%s -> %s [label="%s", weight=100];' % (self.srcOp['OperatorId:'], self.dstOp['OperatorId:'], self.kind)
+		elif self.dstOp:
+			print '%s -> %s [label="%s", weight=100];' % (self.srcV.bottom, self.dstOp['OperatorId:'], self.kind)
+		else:
+			print '%s -> %s [label="%s", weight=100];' % (self.srcV.bottom, self.dstV.top, self.kind)
+	def claim(self, vmap):
+		self.srcV = vmap[self.src]
+		self.dstV = vmap[self.dst]
+		srcops = vmap[self.src].opset
+		dstops = vmap[self.dst].opset
+		for op in srcops.values():
+			if (op.has_key('outputOperator:')):
+				# another 1-1 assumption
+				outop = op['outputOperator:'][0]
+				if dstops.has_key(outop):
+					self.srcOp = op
+					self.dstOp = dstops[outop]
+					return
+		for op in dstops.values():
+			if (op.has_key('input vertices:')):
+				inputs = set(op['input vertices:'].values())
+				if (self.src in inputs):
+					self.dstOp = op
+					return
+		comment("WARNING: No connection for %s->%s" % (self.src, self.dst))
+	@staticmethod
+	def create(dst, srcs):
+		if type(srcs) is dict: srcs = [srcs]
+		# tez plan as A <- B, C, D	
+		# invert for actual use
+		# invert CONTAINS edges
+		for s in srcs:
+			if s['type'] != "CONTAINS":
+				yield TezEdge(s['parent'], dst, s['type'])
+			else:
+				yield TezEdge(dst, s['parent'], s['type'])
 
 class TezVertex(object):
 	def __init__(self, dag, name, raw):
@@ -37,6 +92,37 @@ class TezVertex(object):
 				if type(self.tree) is list:
 					assert len(self.tree) == 1
 					self.tree = self.tree.pop()
+		ops = list(self.getops(self.tree))
+		self.opset = dict(ops)
+		if not self.opset:
+			self.opset = {}
+			self.top = self.prefix
+			self.bottom = self.prefix
+			assert "Union" in self.name 
+		else:
+			self.top = ops[0][0]
+			self.bottom = ops[-1][0]
+
+	def getops(self, ops):
+		if type(ops) is not dict:
+			return
+		for (k,v) in ops.items():
+			if v.items():
+				if v.has_key('OperatorId:'):
+					yield (v['OperatorId:'],v)
+				else:
+					v['OperatorId:'] = "FAKE_%d" % (nextInt())
+					yield (v['OperatorId:'],v)
+			for k1,v1 in v.items():
+				if (k1 == "children" and v1): 
+					if type(v1) is list:
+						for v2 in v1:
+							for op in self.getops(v2):
+								yield op
+					else:
+						for op in self.getops(v1):
+							yield op
+
 	def draw(self):
 		self.nodes = 0
 		color = "blue" if self.vectorized else "red"
@@ -64,7 +150,7 @@ class TezVertex(object):
 			return
 		for (k,v) in ops.items():
 			nodeid = self.nodes
-			name = "%s_%d" % (self.prefix, nodeid)
+			name = "%s" % (v['OperatorId:'])
 			self.nodes += 1
 			if parent:
 				print "%s -> %s [weight=1];" % (parent, name) 
@@ -92,33 +178,23 @@ class TezVertex(object):
 				print '%s [shape=plaintext,label=<%s>];' % (name, "<table>%s</table>" % "\n".join(text)) 
 			else:
 				print '%s [label=<%s>];' % (name, k) 
-				
-
-	def connect(self):
-		for (i, t, p) in self.parents:
-			pprefix = p.name.replace(" ", "_")
-			if t == "CONTAINS":
-				print '%s_%d -> %s_0 [label="%s", weight=100];' % (self.prefix, self.nodes-1, pprefix, t)
-			else:
-				print '%s_%d -> %s_0 [label="%s", weight=100];' % (pprefix, p.nodes-1, self.prefix, t)
-
 
 class HiveTezDag(object):
 	def __init__(self, q, raw):
 		raw = raw["Tez"]
 		self.query = q
 		self.name = raw.get("DagName:") or raw.get("DagId:") or "Unknown"
-		self.edges = (raw.has_key("Edges:") and raw["Edges:"]) or {}
+		self.edges = reduce(lambda a,b: a+b, [list(TezEdge.create(k,v)) for (k,v) in ((raw.has_key("Edges:") and raw["Edges:"]) or {}).items()], [])
 		self.vertices = [TezVertex(self, k,v) for (k,v) in raw["Vertices:"].items()]
 		vmap = dict([(v.name, v) for v in self.vertices])
-		for k,v in self.edges.items():
-			child = vmap[k]
-			if type(v) is dict: v = [v]
-			for (i,p) in enumerate(v):
-				child.parents.append((i, p["type"], vmap[p["parent"]]))
+		opmap = reduce(lambda a,b: a.update(b) or a, [v.opset for v in self.vertices], {})
+		comment(opmap.keys())
+		# basic assumption 1-1 edge between vertices
+		for e in self.edges:
+			e.claim(vmap)
 	def draw(self):
 		[v.draw() for v in self.vertices]
-		[v.connect() for v in self.vertices]
+		[e.connect() for e in self.edges]
 
 class HivePlan(object):
 	def __init__(self, q, raw):
@@ -130,6 +206,7 @@ class HivePlan(object):
 		print "digraph g {"
 		print "node [shape=box];"
 		print 'node [id="\N"];'
+		print 'compound=true;'
 		print ""
 		self.stages[1].draw()
 		print "}"
