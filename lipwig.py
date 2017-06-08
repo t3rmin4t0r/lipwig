@@ -61,8 +61,7 @@ class TezEdge(object):
 						inputs = set(self.dstOp['input vertices:'].values())
 						if (self.src in inputs):
 							self.port = 'e'
-						# do not trust it
-						# return
+						# do not trust it - no return
 		for op in dstops.values():
 			if (op.has_key('input vertices:')):
 				inputs = set(op['input vertices:'].values())
