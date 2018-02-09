@@ -11,7 +11,8 @@ SIMPLE=False
 
 
 def comment(s):
-	print "/*\n%s\n*/" % s
+	#print "/*\n%s\n*/" % s
+	pass
 
 def simple():
 	global SIMPLE
