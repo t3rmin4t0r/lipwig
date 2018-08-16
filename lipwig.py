@@ -216,7 +216,10 @@ class TezVertex(object):
 						l='<FONT COLOR="RED" POINT-SIZE="24">&#9888;%s</FONT>' % l
 					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
 			#print '%s [label="%s"];' % (name, k)
-			currstats="%s rows (%0.2fx)" % (prevrows, prevdiff)
+			if (self.dag.plan.counters):
+				currstats="%s rows (%0.2fx)" % (prevrows, prevdiff)
+			else:
+				currstats = ""
 			if children:
 				if type(children) is list:
 					for v2 in children:
@@ -271,8 +274,9 @@ def openPackage(f):
 			query = qdata['query']
 			details = qdata['queryDetails']
 			plan = HivePlan(query['queryId'],details['explainPlan'])
-			countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
-			plan.counters = countergroups
+			if details['counters']:
+				countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
+				plan.counters = countergroups
 			return plan
 		return None
 	return HivePlan(f,json.load(open(f)))
