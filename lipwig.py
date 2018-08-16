@@ -2,6 +2,7 @@ import sys
 import json
 import textwrap
 from getopt import getopt
+from zipfile import ZipFile
 
 from cgi import escape
 from itertools import count as counter
@@ -9,6 +10,12 @@ from itertools import count as counter
 
 SIMPLE=False
 
+def size_fmt(num, suffix='B'):
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
 
 def comment(s):
 	#print "/*\n%s\n*/" % s
@@ -36,8 +43,14 @@ class TezEdge(object):
 		self.dstOp = None
 		self.port = "n"
 	def connect(self):
+		label = self.kind
+		if self.srcV.dag.plan.counters:
+			ctrname="TaskCounter_%s_OUTPUT_%s" % (self.srcV.name.replace(" ","_"), self.dstV.name.replace(" ", "_"))
+			edgectr = self.srcV.dag.plan.counters[ctrname]
+			bytesout = edgectr[u'OUTPUT_BYTES_PHYSICAL']['counterValue']
+			label = "%s (%s)" % (self.kind, size_fmt(int(bytesout))) 
 		def drawEdge(a,b):
-			print '%s:s -> %s:%s [label="%s", weight=100];' % (a,b,self.port, self.kind)
+			print '%s:s -> %s:%s [label="%s", weight=100];' % (a,b,self.port, label)
 		if self.srcOp and self.dstOp:
 			drawEdge(self.srcOp['OperatorId:'], self.dstOp['OperatorId:'])
 		elif self.dstOp:
@@ -157,10 +170,10 @@ class TezVertex(object):
 		print "rank=same;"
 		print "color=%s;" % color
 		print 'label="%s (vectorized=%s)";' % (self.name, str(self.vectorized).lower())
-		self.drawOp(self.tree, None)
+		self.drawOp(self.tree, None, None)
 		print "}"
 
-	def drawOp(self, ops, parent=None):
+	def drawOp(self, ops, parent=None, prevstats=None):
 		important_keys = set([
 #			"outputColumnNames:",
 			"expressions:",
@@ -173,25 +186,27 @@ class TezVertex(object):
 		])
 		if type(ops) is not dict:
 			return
+		children = None
 		for (k,v) in ops.items():
 			nodeid = self.nodes
 			name = "%s" % (v['OperatorId:'])
 			self.nodes += 1
 			if parent:
-				print "%s -> %s [weight=1];" % (parent, name) 
-			children = False
+				print '%s -> %s [weight=1, label="%s"];' % (parent, name, prevstats) 
 			text = ["<tr><td colspan=\"2\"><b>%s</b></td></tr>" % k]
 			for k1,v1 in v.items():
 				if (k1 == "children" and v1): 
-					if type(v1) is list:
-						for v2 in v1:
-							self.drawOp(v2, name)
-					else:
-						self.drawOp(v1, name)
+				    children = v1
 				elif k1 == "Statistics:":
 					rows = v1[v1.find("Num rows:")+len("Num rows:"):v1.find("Data size:")]
 					rawsize = v1[v1.find("Data size:")+len("Data size:") : v1.find("Basic ")]
-					text.insert(1,"<tr><td>Rows:</td><td>%s</td></tr>" % rows)
+					if self.dag.plan.counters:
+						hivectrs = self.dag.plan.counters["HIVE"]
+						rctr = hivectrs["RECORDS_OUT_OPERATOR_%s" % name]["counterValue"]
+						prevdiff = float(rctr)/int(rows)
+						prevrows = int(rctr)
+						#text.insert(1,"<tr><td>Actual Rows:</td><td>%s (%0.2f)</td></tr>" % (rctr, diff))
+					text.insert(1,"<tr><td>Expected Rows:</td><td>%s</td></tr>" % rows)
 					text.insert(1,"<tr><td>Size:</td><td>%s</td></tr>" % rawsize)
 				elif k1 == "alias:" or not simple():
 					l = escape(lwrap(json.dumps(v1))).replace("\n", "<br/>")
@@ -201,14 +216,22 @@ class TezVertex(object):
 						l='<FONT COLOR="RED" POINT-SIZE="24">&#9888;%s</FONT>' % l
 					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
 			#print '%s [label="%s"];' % (name, k)
+			currstats="%s rows (%0.2fx)" % (prevrows, prevdiff)
+			if children:
+				if type(children) is list:
+					for v2 in children:
+						self.drawOp(v2, name, currstats)
+				else:
+					self.drawOp(children, name, currstats)
 			if v.items():
 				print '%s [shape=plaintext,label=<%s>];' % (name, "<table>%s</table>" % "\n".join(text)) 
 			else:
 				print '%s [label=<%s>];' % (name, k) 
 
 class HiveTezDag(object):
-	def __init__(self, q, raw):
+	def __init__(self, plan, q, raw):
 		raw = raw["Tez"]
+		self.plan = plan
 		self.query = q
 		self.name = raw.get("DagName:") or raw.get("DagId:") or "Unknown"
 		self.edges = reduce(lambda a,b: a+b, [list(TezEdge.create(k,v)) for (k,v) in ((raw.has_key("Edges:") and raw["Edges:"]) or {}).items()], [])
@@ -227,9 +250,10 @@ class HiveTezDag(object):
 class HivePlan(object):
 	def __init__(self, q, raw):
 		self.raw = raw
-		stages = [(k,HiveTezDag(q, v)) for (k,v) in raw["STAGE PLANS"].items() if v.has_key("Tez")]
+		stages = [(k,HiveTezDag(self, q, v)) for (k,v) in raw["STAGE PLANS"].items() if v.has_key("Tez")]
 		assert len(stages) == 1
 		self.stages = stages.pop()
+		self.counters = {} # none for "explain formatted" 
 	def draw(self):
 		print "digraph g {"
 		print "node [shape=box];"
@@ -240,13 +264,26 @@ class HivePlan(object):
 		self.stages[1].draw()
 		print "}"
 
+def openPackage(f):
+	if f.endswith(".zip"):
+		with ZipFile(f,'r') as zz:
+			qdata = json.loads(zz.read('DAS/QUERY.json'))
+			query = qdata['query']
+			details = qdata['queryDetails']
+			plan = HivePlan(query['queryId'],details['explainPlan'])
+			countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
+			plan.counters = countergroups
+			return plan
+		return None
+	return HivePlan(f,json.load(open(f)))
+
 def main(argv):
 	opts, argv = getopt(argv, "0", ['simple'])
 	global SIMPLE
 	for (k,v) in opts:
 		if k == '-0' or k == "--simple":
 			SIMPLE=True
-	p = [HivePlan(f, json.load(open(f))) for f in argv]
+	p = [openPackage(f) for f in argv]
 	[x.draw() for x in p]
 
 if __name__ == "__main__":
