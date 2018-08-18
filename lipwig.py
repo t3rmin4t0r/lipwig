@@ -6,7 +6,15 @@ from zipfile import ZipFile
 
 from cgi import escape
 from itertools import count as counter
+from collections import defaultdict
+from math import log10
 
+NX = True
+try:
+	import networkx as nx
+except:
+	sys.stderr.write("Could not import nx\npip install networkx, please\n")
+	NX = False 
 
 SIMPLE=False
 
@@ -42,16 +50,21 @@ class TezEdge(object):
 		self.srcOp = None
 		self.dstOp = None
 		self.port = "n"
+	def __repr__(self):
+		return "%s -> %s (%s)" % (self.src, self.dst, self.kind) 
 	def connect(self):
 		label = self.kind
+		style = "penwidth=1" 
 		if self.srcV.dag.plan.counters:
 			ctrname="TaskCounter_%s_OUTPUT_%s" % (self.srcV.name.replace(" ","_"), self.dstV.name.replace(" ", "_"))
 			edgectr = self.srcV.dag.plan.counters[ctrname]
 			bytesout = edgectr[u'OUTPUT_BYTES_PHYSICAL']['counterValue']
 			label = "%s (%s)" % (self.kind, size_fmt(int(bytesout))) 
+		if self.srcV.critical:
+			style = "color=red";
 		def drawEdge(a,b):
-			print '%s:s -> %s:%s [label="%s", weight=100];' % (a,b,self.port, label)
-		if self.srcOp and self.dstOp:
+			print '%s:s -> %s:%s [label="%s", weight=100, %s];' % (a,b,self.port, label, style)
+		if (self.srcOp and self.dstOp) and not(self.kind == 'dpp'):
 			drawEdge(self.srcOp['OperatorId:'], self.dstOp['OperatorId:'])
 		elif self.dstOp:
 			drawEdge(self.srcV.bottom, self.dstOp['OperatorId:'])
@@ -65,6 +78,12 @@ class TezEdge(object):
 		srcops = vmap[self.src].opset
 		dstops = vmap[self.dst].opset
 		for op in srcops.values():
+			if op.has_key("Target Vertex:") and op["Target Vertex:"] == self.dst:
+				if self.kind == 'dpp' and op["OperatorId:"].startswith("EVENT_"):
+					self.srcOp = op
+					return
+			if op.has_key("outputname:") and op["outputname:"] == self.dst:
+				self.srcOp = op
 			if (op.has_key('outputOperator:')):
 				# another 1-1 assumption
 				outop = op['outputOperator:'][0]
@@ -76,6 +95,9 @@ class TezEdge(object):
 						if (self.src in inputs):
 							self.port = 'e'
 						# do not trust it - no return
+		if (self.kind == 'dpp'):
+			print self.src, self.dst, self.srcOp
+			return
 		for op in dstops.values():
 			if (op.has_key('input vertices:')):
 				inputs = set(op['input vertices:'].values())
@@ -109,6 +131,9 @@ class TezEdge(object):
 				yield TezEdge(s['parent'], dst, s['type'])
 			else:
 				yield TezEdge(dst, s['parent'], s['type'])
+	@staticmethod
+	def dpp(src, dst, table):
+		return TezEdge(src, dst, 'dpp')	
 
 class TezVertex(object):
 	def __init__(self, dag, name, raw):
@@ -117,8 +142,9 @@ class TezVertex(object):
 		self.raw = raw
 		self.vectorized = False
 		self.empty = True
-		self.parents = []
 		self.prefix = name.replace(" ", "_")
+		self.events = []
+		self.critical = False
 		for k in raw:
 			if k == "Execution mode:":
 				self.vectorized = "vectorized" in raw[k]
@@ -140,7 +166,7 @@ class TezVertex(object):
 		else:
 			self.top = ops[0][0]
 			self.bottom = ops[-1][0]
-
+	
 	def getops(self, ops):
 		if type(ops) is not dict:
 			return
@@ -160,7 +186,20 @@ class TezVertex(object):
 					else:
 						for op in self.getops(v1):
 							yield op
-
+	def timing(self):
+		if (self.events):
+			ev = self.events
+			start = ev["startTime"]
+			end = ev["endTime"]
+			prev = start 
+			for p in self.dag.parents(self.name):
+				x = p.timing()
+				if x:
+					(s1, s2, e1) = x
+					if (prev < e1):
+						prev = e1 
+			return (start, prev, end) 
+		return None
 	def draw(self):
 		self.nodes = 0
 		color = "blue" if self.vectorized else "red"
@@ -169,7 +208,16 @@ class TezVertex(object):
 		print "compound=true;"
 		print "rank=same;"
 		print "color=%s;" % color
-		print 'label="%s (vectorized=%s)";' % (self.name, str(self.vectorized).lower())
+		opts = ["vectorized=%s" % str(self.vectorized).lower()]
+		if (self.critical):
+			print "edge[color=red];"
+		t = self.timing()
+		if t:
+			(s1, s2, e1) = t
+			opts.append("own time=%d ms" % (e1-s2))
+			if (s1 != s2):
+				opts.append("waiting+= %d ms" % (s2-s1)) 
+		print 'label="%s\\n (%s)";' % (self.name, ", ".join(opts))
 		self.drawOp(self.tree, None, None)
 		print "}"
 
@@ -231,6 +279,40 @@ class TezVertex(object):
 			else:
 				print '%s [label=<%s>];' % (name, k) 
 
+class Tez2Graph(object):
+	def __init__(self, dag, dpp):
+		self.dag = dag
+		edges = dag.edges
+		self.weights = None
+		self._parents = defaultdict(list)
+		self.edges = [(e.src, e.dst, e.kind) for e in dag.edges] + [(src.name, dst.name, 'dpp') for (src, dst, table) in dpp] 
+		for (src,dst,kind) in self.edges:
+			self._parents[dst].append(src)
+	def parents(self, vname):
+		return self._parents[vname]
+	def compute(self):
+		global NX
+		slowest = None
+		if NX:
+			import networkx as nx
+			g = nx.DiGraph()
+			starts = set([src for (src, dst, kind) in self.edges]) - set([dst for (src, dst, kind) in self.edges])
+			ends = set([dst for (src, dst, kind) in self.edges]) - starts
+			for (src,dst,kind) in self.edges:
+				g.add_edge(src, dst)
+			slowest = []
+			e2etime = 0
+			for (s,e) in [(x,y) for x in starts for y in ends]:
+				allpaths = nx.all_simple_paths(g, source=s, target=e, cutoff=len(self.edges))
+				for path in allpaths:
+					timing = lambda v : self.dag.vmap[v].timing()
+					ts = sum([(e1-s2) for (s1, s2, e1) in filter(lambda a: a[0], [timing(v) for v in path])])
+					if (ts > e2etime):
+						e2etime = ts
+						slowest = path
+			for v in slowest:
+				self.dag.vmap[v].critical = True
+
 class HiveTezDag(object):
 	def __init__(self, plan, q, raw):
 		raw = raw["Tez"]
@@ -239,13 +321,27 @@ class HiveTezDag(object):
 		self.name = raw.get("DagName:") or raw.get("DagId:") or "Unknown"
 		self.edges = reduce(lambda a,b: a+b, [list(TezEdge.create(k,v)) for (k,v) in ((raw.has_key("Edges:") and raw["Edges:"]) or {}).items()], [])
 		self.vertices = [TezVertex(self, k,v) for (k,v) in raw["Vertices:"].items()]
-		vmap = dict([(v.name, v) for v in self.vertices])
+		self.vmap = dict([(v.name, v) for v in self.vertices])
 		opmap = reduce(lambda a,b: a.update(b) or a, [v.opset for v in self.vertices], {})
 		comment(opmap.keys())
+		dpp = []
+		for v in self.vertices:
+			for k in v.opset:
+				if (k.startswith("EVENT_")):
+					op = v.opset[k]
+					self.edges.append(TezEdge.dpp(v.name,op['Target Vertex:'], op['Target Input:']))
 		# basic assumption 1-1 edge between vertices
 		# but connect unions first
 		for e in sorted(self.edges, key = lambda e : (e.kind == "CONTAINS" and 0) or 1):
-			e.claim(vmap, opmap)
+			e.claim(self.vmap, opmap)
+		self.weights = Tez2Graph(self, dpp)
+	def parents(self, vname):
+		return [self.vmap[v] for v in self.weights.parents(vname)]
+	def vevents(self, evs):
+		for v in self.vertices:
+			if (evs.has_key(v.name)):
+				v.events = evs[v.name]
+		self.weights.compute()
 	def draw(self):
 		[v.draw() for v in self.vertices]
 		[e.connect() for e in self.edges]
@@ -257,6 +353,8 @@ class HivePlan(object):
 		assert len(stages) == 1
 		self.stages = stages.pop()
 		self.counters = {} # none for "explain formatted" 
+	def vevents(self, vevents):
+		self.stages[1].vevents(vevents)
 	def draw(self):
 		print "digraph g {"
 		print "node [shape=box];"
@@ -277,6 +375,10 @@ def openPackage(f):
 			if details['counters']:
 				countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
 				plan.counters = countergroups
+			if "DAS/VERTICES.json" in zz.namelist():
+				vdata = json.loads(zz.read("DAS/VERTICES.json"))
+				vevents = dict([(v['name'], v) for v in vdata["vertices"]])
+				plan.vevents(vevents)
 			return plan
 		return None
 	return HivePlan(f,json.load(open(f)))
