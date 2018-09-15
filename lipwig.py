@@ -256,7 +256,10 @@ class TezVertex(object):
 					rawsize = v1[v1.find("Data size:")+len("Data size:") : v1.find("Basic ")]
 					if self.dag.plan.counters:
 						hivectrs = self.dag.plan.counters["HIVE"]
-						rctr = hivectrs["RECORDS_OUT_OPERATOR_%s" % name]["counterValue"]
+						if (hivectrs.has_key("RECORDS_OUT_OPERATOR_%s" % name)):
+							rctr = hivectrs["RECORDS_OUT_OPERATOR_%s" % name]["counterValue"]
+						else:
+							rctr = -1
 						prevdiff = float(rctr)/int(rows)
 						prevrows = int(rctr)
 						#text.insert(1,"<tr><td>Actual Rows:</td><td>%s (%0.2f)</td></tr>" % (rctr, diff))
