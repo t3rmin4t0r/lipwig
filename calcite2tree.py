@@ -12,7 +12,7 @@ from getopt import getopt
 
 nextInt = counter().next 
 
-SIMPLE = False
+SIMPLE = True 
 def simple():
 	global SIMPLE
 	return SIMPLE
@@ -74,9 +74,9 @@ class CalciteNode(object):
 	def drawfull(self, node):
 		text = ["<tr><td colspan=\"1\"><b>%s</b></td></tr>" % self.kind]
 		if (self.options):
-			text.append(tr(self.options))
+			text.append(self.tr(self.options))
 		if (self.costs):
-			text.append(tr(self.costs))
+			text.append(self.tr(self.costs))
 		print '%s [shape=plaintext,label=<%s>];' % (node, "<table>%s</table>" % "\n".join(text))
 	def drawsimple(self, node):
 		print '%s [shape=record, label="%s"]' % (node, self.kind)
@@ -89,14 +89,55 @@ class TableScanNode(CalciteNode):
 		self.alias = m.group(1)
 	def drawsimple(self, node):
 		print '%s [shape=record,label="%s(%s)"];' % (node, self.kind, self.alias)
+
+class JoinNode(CalciteNode):
+	JOIN_PAT=re.compile(r'joinType=\[([^\]]*)\]')
+	COST_PAT=re.compile(r'cost=.{([^ ]*) rows, ([^ ]*) *cpu, ([^ ]*) *io')
+	def __init__(self, kind, options, costs, rows):
+		CalciteNode.__init__(self, kind, options, costs, rows)
+		m = self.JOIN_PAT.search(options)
+		self.jointype = m.group(1)
+		m = self.COST_PAT.search(options)
+		self.joincost = None
+		if m:
+			self.joincost = int(float(m.group(1))) 
+	def drawsimple(self, node):
+		costs = ""
+		if self.joincost:
+			costs = "\\ncost: %d rows (%.2f%%)" % (self.joincost, (100.0*self.rows)/self.joincost)
+		print '%s [shape=record,label="%s(%s)%s"];' % (node, self.kind, self.jointype, costs)
+
+class FilterNode(CalciteNode):
+	def __init__(self, kind, options, costs, rows):
+		CalciteNode.__init__(self, kind, options, costs, rows)
+	def drawsimple(self, node):
+		ratio = ""
+		before = self.children[0].rows
+		if before != -1:
+			after = self.rows
+			ratio = " (%.2f%%)" % ((100.0*after)/before)  
+		print '%s [shape=record,label="%s%s"];' % (node, self.kind, ratio)
+
+class AggregateNode(CalciteNode):
+	GROUP_PAT=re.compile(r'group=\[{([^}]*)}\]')
+	def __init__(self, kind, options, costs, rows):
+		CalciteNode.__init__(self, kind, options, costs, rows)
+		m = self.GROUP_PAT.search(options)
+		self.groups = len(m.group(1).split(","))-1
+	def drawsimple(self, node):
+		print '%s [shape=record,label="%s(%d keys)"];' % (node, self.kind, self.groups)
+
+class ProjectNode(CalciteNode):
+	def __init__(self, kind, options, costs, rows):
+		CalciteNode.__init__(self, kind, options, costs, rows)
+		self.cols = len(options.split("=["))-1
+	def drawsimple(self, node):
+		print '%s [shape=record,label="%s(%d cols)"];' % (node, self.kind, self.cols)
 	
 class CalciteNodeFactory(object):
 	PAT=re.compile(r'([A-Za-z]*)\((.*)\):?(.*)')
 	ROW_PAT = re.compile(r'rowcount = ([^,]*),')
-	"""
-	HiveJoin(condition=[true], joinType=[inner], algorithm=[none], cost=[not available])
-	"""
-	SpecialTypes = {'TableScan' : TableScanNode}
+	SpecialTypes = {'TableScan' : TableScanNode, 'Join' : JoinNode, 'Filter' : FilterNode, 'Aggregate' : AggregateNode, 'Project' : ProjectNode}
 	def create(self, tnode):
 		(kind, options, costs, rows) = self.parse(tnode.line)
 		node = None
@@ -117,7 +158,7 @@ class CalciteNodeFactory(object):
 				m2 = self.ROW_PAT.search(costs)
 				rows = float(m2.group(1))
 			return (kind, options, costs, rows)
-		return ("ROOT", "", "", -1)
+		return ("RESULT", "", "", -1)
 
 def skipheaders(lines):
 	plan = False
@@ -130,11 +171,13 @@ def skipheaders(lines):
 
 def main(args):
 	plan = False
-	opts, args = getopt(args, "0", ['simple'])
+	opts, args = getopt(args, "0", ['simple', 'full'])
 	global SIMPLE
 	for (k,v) in opts:
 		if k == '-0' or k == "--simple":
 			SIMPLE=True
+		if k == "--full":
+			SIMPLE=False
 	lines = list(skipheaders(open(args[0])))
 	root = TabNode(None)
 	node = root
