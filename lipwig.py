@@ -58,10 +58,12 @@ class TezEdge(object):
 		style = "penwidth=1" 
 		if self.srcV.dag.plan.counters:
 			ctrname="TaskCounter_%s_OUTPUT_%s" % (self.srcV.name.replace(" ","_"), self.dstV.name.replace(" ", "_"))
+			label = "%s" % (self.kind)
 			if (self.srcV.dag.plan.counters.has_key(ctrname)):
 				edgectr = self.srcV.dag.plan.counters[ctrname]
-				bytesout = edgectr[u'OUTPUT_BYTES_PHYSICAL']['counterValue']
-				label = "%s (%s)" % (self.kind, size_fmt(int(bytesout))) 
+				if (edgectr.has_key(u'OUTPUT_BYTES_PHYSICAL')):
+					bytesout = edgectr[u'OUTPUT_BYTES_PHYSICAL']['counterValue']
+					label = "%s (%s)" % (self.kind, size_fmt(int(bytesout))) 
 		(s,t,k) = self.srcV.dag.weights.edge2ops(self)
 		if self.srcV.dag.weights.iscriticalpath(s,t):
 			style = "color=red";
