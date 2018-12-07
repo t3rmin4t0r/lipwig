@@ -83,16 +83,21 @@ class CalciteNode(object):
 
 class TableScanNode(CalciteNode):
 	ALIAS_PAT=re.compile(r'.*table:alias=\[([^\]]*)\].*')
+	#table=[[ge_finance, xx_po_distributions]"
+	TABLE_PATH=re.compile(r'table=\[\[([^,]*), ([^,]*)\]\]')
 	def __init__(self, kind, options, costs, rows):
 		CalciteNode.__init__(self, kind, options, costs, rows)
+		m = self.TABLE_PATH.match(self.options)
+		self.table="%s.%s" % (m.group(1), m.group(2))
 		m = self.ALIAS_PAT.match(self.options)
 		self.alias = m.group(1)
 	def drawsimple(self, node):
-		print '%s [shape=record,label="%s(%s)"];' % (node, self.kind, self.alias)
+		print '%s [shape=record,label="%s(%s):%s"];' % (node, self.kind, self.alias, self.table)
 
 class JoinNode(CalciteNode):
 	JOIN_PAT=re.compile(r'joinType=\[([^\]]*)\]')
 	COST_PAT=re.compile(r'cost=.{([^ ]*) rows, ([^ ]*) *cpu, ([^ ]*) *io')
+	COND_PAT=re.compile(r'condition=\[(.*)\], joinType') 
 	def __init__(self, kind, options, costs, rows):
 		CalciteNode.__init__(self, kind, options, costs, rows)
 		m = self.JOIN_PAT.search(options)
@@ -101,11 +106,18 @@ class JoinNode(CalciteNode):
 		self.joincost = None
 		if m:
 			self.joincost = int(float(m.group(1))) 
+		m = self.COND_PAT.search(options)
+		self.typeissue = None
+		if m:
+			self.typeissue = ('CAST' in m.group(1))
 	def drawsimple(self, node):
 		costs = ""
+		style = ""
 		if self.joincost:
 			costs = "\\ncost: %d rows (%.2f%%)" % (self.joincost, (100.0*self.rows)/self.joincost)
-		print '%s [shape=record,label="%s(%s)%s"];' % (node, self.kind, self.jointype, costs)
+		if self.typeissue:
+			style = "fillcolor=red,style=filled,"
+		print '%s [shape=record,%slabel="%s(%s)%s"];' % (node, style, self.kind, self.jointype, costs)
 
 class FilterNode(CalciteNode):
 	def __init__(self, kind, options, costs, rows):
