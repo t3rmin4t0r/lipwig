@@ -407,13 +407,23 @@ def openPackage(f):
 			query = qdata['query']
 			details = qdata['queryDetails']
 			plan = HivePlan(query['queryId'],details['explainPlan'])
-			if details['counters']:
-				countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
-				plan.counters = countergroups
 			if "DAS/VERTICES.json" in zz.namelist():
 				vdata = json.loads(zz.read("DAS/VERTICES.json"))
 				vevents = dict([(v['name'], v) for v in vdata["vertices"]])
 				plan.vevents(vevents)
+			# new DAS
+			if "DAG0/DAG_INFO.json" in zz.namelist():
+				vdata = json.loads(zz.read("DAG0/DAG_INFO.json"))
+				dagDetails = vdata["dag"]["dagDetails"]
+				details = dagDetails
+			if "DAG0/VERTICES.json" in zz.namelist():
+				vdata = json.loads(zz.read("DAG0/VERTICES.json"))
+				vevents = dict([(v['name'], v) for v in vdata["vertices"]])
+				plan.vevents(vevents)
+			# details might come out of DAG details
+			if details.has_key('counters') and details['counters']:
+				countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
+				plan.counters = countergroups
 			return plan
 		return None
 	return HivePlan(f,json.load(open(f)))
