@@ -403,7 +403,15 @@ class HivePlan(object):
 def openPackage(f):
 	if f.endswith(".zip"):
 		with ZipFile(f,'r') as zz:
-			qdata = json.loads(zz.read('DAS/QUERY.json'))
+			if "DAS/QUERY.json" in zz.namelist():
+				jname = "DAS/QUERY.json"
+			elif "QUERY.json" in zz.namelist():
+				jname = "QUERY.json"
+			else:
+				# this will throw an error, but we want one
+				print "File contains: ", zz.namelist()
+				jname = "DAS/QUERY.json"
+			qdata = json.loads(zz.read(jname))
 			query = qdata['query']
 			details = qdata['queryDetails']
 			plan = HivePlan(query['queryId'],details['explainPlan'])
