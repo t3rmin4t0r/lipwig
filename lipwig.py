@@ -400,34 +400,35 @@ class HivePlan(object):
 		self.stages[1].draw()
 		print "}"
 
+def findOneOfThem(nameslist, lookingfor):
+	l = [value for value in lookingfor if value in nameslist]
+	if l: 
+		return l[0]
+	return None
+
 def openPackage(f):
 	if f.endswith(".zip"):
 		with ZipFile(f,'r') as zz:
-			if "DAS/QUERY.json" in zz.namelist():
-				jname = "DAS/QUERY.json"
-			elif "QUERY.json" in zz.namelist():
-				jname = "QUERY.json"
-			else:
+			jname = findOneOfThem(zz.namelist(), ['DAS/QUERY.json', 'QUERY.json'])
+			if not jname:
 				# this will throw an error, but we want one
-				print "File contains: ", zz.namelist()
+				print 'File contains: ', zz.namelist()
 				jname = "DAS/QUERY.json"
 			qdata = json.loads(zz.read(jname))
 			query = qdata['query']
 			details = qdata['queryDetails']
 			plan = HivePlan(query['queryId'],details['explainPlan'])
-			if "DAS/VERTICES.json" in zz.namelist():
-				vdata = json.loads(zz.read("DAS/VERTICES.json"))
+			vfile = findOneOfThem(zz.namelist(), ["DAS/VERTICES.json", "DAG0/VERTICES.json", "DAS/VERTEX.json"])
+			if vfile:
+				vdata = json.loads(zz.read(vfile))
 				vevents = dict([(v['name'], v) for v in vdata["vertices"]])
 				plan.vevents(vevents)
 			# new DAS
-			if "DAG0/DAG_INFO.json" in zz.namelist():
-				vdata = json.loads(zz.read("DAG0/DAG_INFO.json"))
+			dfile = findOneOfThem(zz.namelist(), ["DAG0/DAS/DAG.json", "DAG0/DAG_INFO.json"])
+			if dfile:
+				vdata = json.loads(zz.read(dfile))
 				dagDetails = vdata["dag"]["dagDetails"]
 				details = dagDetails
-			if "DAG0/VERTICES.json" in zz.namelist():
-				vdata = json.loads(zz.read("DAG0/VERTICES.json"))
-				vevents = dict([(v['name'], v) for v in vdata["vertices"]])
-				plan.vevents(vevents)
 			# details might come out of DAG details
 			if details.has_key('counters') and details['counters']:
 				countergroups = dict([(c['counterGroupName'], dict([(x["counterName"],x) for x in c['counters']])) for c in details['counters']]) 
