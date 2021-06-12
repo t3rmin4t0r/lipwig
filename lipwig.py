@@ -335,14 +335,14 @@ class Op2Graph(object):
 			def timing(v):
 				(s1, s2, e1) = self.dag.vmap[v.name].timing()
 				return (e1-s2)
-			timings = dict([(v.name, timing(v)) for v in self.dag.vertices])
+			timings = dict([(v.name, timing(v)) for v in self.dag.vertices if "Union" not in v.name])
 			vecops = lambda v: [(op,v.name) for op in list(v.opset.keys())] 
 			op2vx = dict(chain(*[vecops(v) for v in self.dag.vertices]))
 			comment(op2vx)
 			for (s,e) in [(x,y) for x in starts for y in ends]:
 				allpaths = nx.all_simple_paths(g, source=s, target=e)
 				for path in allpaths:
-					vpath = set([op2vx[p] for p in path])
+					vpath = set([op2vx[p] for p in path if "Union" not in p])
 					ts = sum([timings[v] for v in vpath])
 					if (ts > e2etime):
 						e2etime = ts
@@ -420,7 +420,7 @@ def openPackage(f):
 			query = qdata['query']
 			details = qdata['queryDetails']
 			plan = HivePlan(query['queryId'],details['explainPlan'])
-			vfile = findOneOfThem(zz.namelist(), ["DAS/VERTICES.json", "DAG0/VERTICES.json", "DAS/VERTEX.json"])
+			vfile = findOneOfThem(zz.namelist(), ["DAS/VERTICES.json", "DAG0/VERTICES.json", "DAS/VERTEX.json", "DAG0/DAS/VERTEX.json"])
 			if vfile:
 				vdata = json.loads(zz.read(vfile))
 				vevents = dict([(v['name'], v) for v in vdata["vertices"]])
