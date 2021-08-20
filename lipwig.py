@@ -387,6 +387,7 @@ class HivePlan(object):
 	def __init__(self, q, raw):
 		self.raw = raw
 		stages = [(k,HiveTezDag(self, q, v)) for (k,v) in list(raw["STAGE PLANS"].items()) if "Tez" in v]
+		stages = [(k,v) for (k,v) in stages if not("File Merge" in v.vmap)]
 		assert len(stages) == 1
 		self.stages = stages.pop()
 		self.counters = {} # none for "explain formatted" 
