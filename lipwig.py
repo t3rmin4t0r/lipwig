@@ -35,7 +35,7 @@ def simple():
 	global SIMPLE
 	return SIMPLE
 
-nextInt = counter().__next__ 
+nextInt = counter().next
 
 def ifseteq(h, k, v):
 	return k in h and h[k] == v
