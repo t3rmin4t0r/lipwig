@@ -4,10 +4,11 @@ import textwrap
 from getopt import getopt
 from zipfile import ZipFile
 
-from cgi import escape
+from html import escape
 from itertools import count as counter
 from itertools import chain
 from collections import defaultdict
+from functools import reduce
 from math import log10
 from functools import reduce
 
@@ -28,14 +29,14 @@ def size_fmt(num, suffix='B'):
     return "%.1f%s%s" % (num, 'Yi', suffix)
 
 def comment(s):
-	#print "/*\n%s\n*/" % s
+	#print("/*\n%s\n*/" % s)
 	pass
 
 def simple():
 	global SIMPLE
 	return SIMPLE
 
-nextInt = counter().next
+nextInt = next(counter())
 
 def ifseteq(h, k, v):
 	return k in h and h[k] == v
@@ -62,7 +63,7 @@ class TezEdge(object):
 			label = "%s" % (self.kind)
 			if (ctrname in self.srcV.dag.plan.counters):
 				edgectr = self.srcV.dag.plan.counters[ctrname]
-				if ('OUTPUT_BYTES_PHYSICAL' in edgectr):
+				if (u'OUTPUT_BYTES_PHYSICAL' in edgectr):
 					bytesout = edgectr['OUTPUT_BYTES_PHYSICAL']['counterValue']
 					label = "%s (%s)" % (self.kind, size_fmt(int(bytesout))) 
 		(s,t,k) = self.srcV.dag.weights.edge2ops(self)
@@ -276,7 +277,7 @@ class TezVertex(object):
 					if k1 == "predicate:" and l.strip() == '"false (type: boolean)"':
 						l='<FONT COLOR="RED" POINT-SIZE="24">&#9888;%s</FONT>' % l
 					text.append("<tr><td>%s</td><td>%s</td></tr>" % (lwrap(k1), l))
-			#print '%s [label="%s"];' % (name, k)
+			#print('%s [label="%s"];' % (name, k))
 			if (self.dag.plan.counters):
 				currstats="%s rows (%0.2fx)" % (prevrows, prevdiff)
 			else:

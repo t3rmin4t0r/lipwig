@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-type python >/dev/null 2>&1 || { echo >&2 "Cannot find python.. Aborting."; exit 1; }
+type python3 >/dev/null 2>&1 || { echo >&2 "Cannot find python.. Aborting."; exit 1; }
 type dot >/dev/null 2>&1 || { echo >&2 "Cannot find dot (graphviz).. Aborting."; exit 1; }
 
 TYPE=svg
@@ -50,7 +50,7 @@ if [ -z "$OUTPUT" ]; then
 	OUTPUT="$INPUT.$TYPE"
 fi
 
-python $LIPWIG_HOME/lipwig.py $SIMPLE $INPUT | dot -T$TYPE -o $OUTPUT
+python3 $LIPWIG_HOME/lipwig.py $SIMPLE $INPUT | dot -T$TYPE -o $OUTPUT
 
 if [ $? -eq 0 ]; then
 	echo "Output saved to $OUTPUT"

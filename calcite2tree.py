@@ -18,7 +18,7 @@ def simple():
 	return SIMPLE
 
 def comment(s):
-	#print "/*\n%s\n*/" % s
+	#print("/*\n%s\n*/" % s)
 	pass
 
 def firstchar(a):
@@ -41,12 +41,12 @@ class TabNode(object):
 	def addchild(self, line):
 		cindent = indent(line)
 		if (cindent <= self.indent):
-			raise "Incorrect indentation"
+			raise("Incorrect indentation")
 		child =TabNode(line, self) 
 		self.children.append(child)
 		return child
 	def output(self):
-		print "%d:%s%s" % (self.indent, (self.indent)*'--', self.line) 
+		print("%d:%s%s" % (self.indent, (self.indent)*'--', self.line))
 		for c in self.children:
 			c.output()
 
@@ -69,7 +69,7 @@ class CalciteNode(object):
 			estrows = ""
 			if (c.rows != -1):
 				estrows = '[label="%d rows"]' % (int(c.rows))
-			print '%s -> %s %s;' % (cnode, node, estrows)
+			print('%s -> %s %s;' % (cnode, node, estrows))
 		return node
 	def drawfull(self, node):
 		text = ["<tr><td colspan=\"1\"><b>%s</b></td></tr>" % self.kind]
@@ -77,9 +77,9 @@ class CalciteNode(object):
 			text.append(self.tr(self.options))
 		if (self.costs):
 			text.append(self.tr(self.costs))
-		print '%s [shape=plaintext,label=<%s>];' % (node, "<table>%s</table>" % "\n".join(text))
+		print('%s [shape=plaintext,label=<%s>];' % (node, "<table>%s</table>" % "\n".join(text)))
 	def drawsimple(self, node):
-		print '%s [shape=record, label="%s"]' % (node, self.kind)
+		print('%s [shape=record, label="%s"]' % (node, self.kind))
 
 class TableScanNode(CalciteNode):
 	ALIAS_PAT=re.compile(r'.*table:alias=\[([^\]]*)\].*')
@@ -92,7 +92,7 @@ class TableScanNode(CalciteNode):
 		m = self.ALIAS_PAT.match(self.options)
 		self.alias = m.group(1)
 	def drawsimple(self, node):
-		print '%s [shape=record,label="%s(%s):%s"];' % (node, self.kind, self.alias, self.table)
+		print('%s [shape=record,label="%s(%s):%s"];' % (node, self.kind, self.alias, self.table))
 
 class JoinNode(CalciteNode):
 	JOIN_PAT=re.compile(r'joinType=\[([^\]]*)\]')
@@ -117,7 +117,7 @@ class JoinNode(CalciteNode):
 			costs = "\\ncost: %d rows (%.2f%%)" % (self.joincost, (100.0*self.rows)/self.joincost)
 		if self.typeissue:
 			style = "fillcolor=red,style=filled,"
-		print '%s [shape=record,%slabel="%s(%s)%s"];' % (node, style, self.kind, self.jointype, costs)
+		print('%s [shape=record,%slabel="%s(%s)%s"];' % (node, style, self.kind, self.jointype, costs))
 
 class FilterNode(CalciteNode):
 	def __init__(self, kind, options, costs, rows):
@@ -128,7 +128,7 @@ class FilterNode(CalciteNode):
 		if before != -1:
 			after = self.rows
 			ratio = " (%.2f%%)" % ((100.0*after)/before)  
-		print '%s [shape=record,label="%s%s"];' % (node, self.kind, ratio)
+		print('%s [shape=record,label="%s%s"];' % (node, self.kind, ratio))
 
 class AggregateNode(CalciteNode):
 	GROUP_PAT=re.compile(r'group=\[{([^}]*)}\]')
@@ -137,14 +137,14 @@ class AggregateNode(CalciteNode):
 		m = self.GROUP_PAT.search(options)
 		self.groups = len(m.group(1).split(","))-1
 	def drawsimple(self, node):
-		print '%s [shape=record,label="%s(%d keys)"];' % (node, self.kind, self.groups)
+		print('%s [shape=record,label="%s(%d keys)"];' % (node, self.kind, self.groups))
 
 class ProjectNode(CalciteNode):
 	def __init__(self, kind, options, costs, rows):
 		CalciteNode.__init__(self, kind, options, costs, rows)
 		self.cols = len(options.split("=["))-1
 	def drawsimple(self, node):
-		print '%s [shape=record,label="%s(%d cols)"];' % (node, self.kind, self.cols)
+		print('%s [shape=record,label="%s(%d cols)"];' % (node, self.kind, self.cols))
 	
 class CalciteNodeFactory(object):
 	PAT=re.compile(r'([A-Za-z]*)\((.*)\):?(.*)')
@@ -153,7 +153,7 @@ class CalciteNodeFactory(object):
 	def create(self, tnode):
 		(kind, options, costs, rows) = self.parse(tnode.line)
 		node = None
-		if (self.SpecialTypes.has_key(kind)):
+		if (kind in self.SpecialTypes):
 			node = self.SpecialTypes[kind](kind, options, costs, rows)
 		else:
 			node = CalciteNode(kind, options, costs, rows)
@@ -204,13 +204,13 @@ def main(args):
 			node = node.addchild(l)
 	factory = CalciteNodeFactory()
 	cnode = factory.create(root)
-	print """
+	print("""
 	digraph g {
 	rankdir=BT;
-	"""
+	""")
 
 	cnode.draw()
-	print "}"
+	print("}")
 	
 
 
